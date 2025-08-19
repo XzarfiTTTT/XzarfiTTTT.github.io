@@ -1,0 +1,62 @@
+.ttt-board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 8px;
+    width: 264px;
+    height: 264px;
+    margin: 24px auto;
+}
+.cell {
+    width: 80px;
+    height: 80px;
+    background: #e6f7ff;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    overflow: hidden;
+}
+.cell img {
+    width: 60px;
+    height: 60px;
+    object-fit: contain;
+    display: block;
+}
+.ttt-board {
+    display: grid;
+    grid-template-columns: repeat(3, 80px);
+    grid-template-rows: repeat(3, 80px);
+    gap: 8px;
+    justify-content: center;
+    margin: 24px 0;
+}
+.cell {
+    width: 80px;
+    height: 80px;
+    background: #e6f7ff;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+body {
+    font-family: 'Comic Sans MS', cursive, sans-serif;
+    background: #f0f8ff;
+    margin: 0;
+    padding: 0;
+}
+#app {
+    max-width: 500px;
+    margin: 40px auto;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+    padding: 32px 24px;
+}
