@@ -38,9 +38,155 @@ const characters = [
 function renderStartScreen() {
   document.getElementById('app').innerHTML = `
     <h1>Paw Patrol Tic-Tac-Toe</h1>
+    <button id="onePlayerBtn">1 Player</button>
     <button id="twoPlayerBtn">2 Player</button>
   `;
+  document.getElementById('onePlayerBtn').onclick = () => {
+    renderCharacterSelect1P();
+  };
   document.getElementById('twoPlayerBtn').onclick = renderCharacterSelect;
+}
+
+// --- 1 Player Mode ---
+function renderCharacterSelect1P() {
+  document.getElementById('app').innerHTML = `
+    <h2>Player: Choose your character</h2>
+    <div id="charSelect1P" class="char-select"></div>
+    <button id="backBtn">Back</button>
+  `;
+  const charDiv = document.getElementById('charSelect1P');
+  characters.forEach((char, idx) => {
+    const mainImg = char.images[0];
+    if (!mainImg) return;
+    const btn = document.createElement('button');
+    btn.innerHTML = `<img src="assets/${char.folder}/${mainImg}" alt="${char.name}" width="80"><br>${char.name}`;
+    btn.onclick = () => {
+      players[0].charIdx = idx;
+      renderImageSelect1P(idx);
+    };
+    charDiv.appendChild(btn);
+  });
+  document.getElementById('backBtn').onclick = renderStartScreen;
+}
+
+function renderImageSelect1P(charIdx) {
+  const char = characters[charIdx];
+  document.getElementById('app').innerHTML = `
+    <h2>Player: Choose your ${char.name} picture</h2>
+    <div id="imgSelect1P" class="char-select"></div>
+    <button id="backBtn">Back</button>
+  `;
+  const imgDiv = document.getElementById('imgSelect1P');
+  char.images.forEach((img, i) => {
+    const btn = document.createElement('button');
+    btn.innerHTML = `<img src="assets/${char.folder}/${img}" alt="${char.name}" width="80">`;
+    btn.onclick = () => {
+      players[0].character = char.name;
+      players[0].image = `assets/${char.folder}/${img}`;
+      players[0].charIdx = charIdx;
+      // Computer picks random character/image (not same as player)
+      let compIdx;
+      do {
+        compIdx = Math.floor(Math.random() * characters.length);
+      } while (compIdx === charIdx);
+      const compChar = characters[compIdx];
+      const compImg = compChar.images[Math.floor(Math.random() * compChar.images.length)];
+      players[1].character = compChar.name;
+      players[1].image = `assets/${compChar.folder}/${compImg}`;
+      players[1].charIdx = compIdx;
+      startGame1P();
+    };
+    imgDiv.appendChild(btn);
+  });
+  document.getElementById('backBtn').onclick = renderCharacterSelect1P;
+}
+
+function startGame1P() {
+  board = Array(9).fill(null);
+  currentPlayer = 0;
+  gameActive = true;
+  renderBoard1P();
+}
+
+function renderBoard1P() {
+  let html = `
+    <h2>${players[0].character} (You) vs ${players[1].character} (Computer)</h2>
+    <div id="ttt-board" class="ttt-board">
+  `;
+  for (let i = 0; i < 9; i++) {
+    html += `<div class="cell" data-idx="${i}">`;
+    if (board[i] !== null) {
+      html += `<img src="${players[board[i]].image}" alt="${players[board[i]].character}" width="60">`;
+    }
+    html += `</div>`;
+  }
+  html += '</div>';
+  html += `<h3 id="turnInfo">${currentPlayer === 0 ? players[0].character + "'s turn (You)" : players[1].character + "'s turn (Computer)"}</h3>`;
+  html += `<button id="restartBtn">Restart</button>`;
+  document.getElementById('app').innerHTML = html;
+
+  document.querySelectorAll('.cell').forEach(cell => {
+    cell.onclick = onCellClick1P;
+  });
+  document.getElementById('restartBtn').onclick = renderStartScreen;
+}
+
+function onCellClick1P(e) {
+  const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
+  if (!gameActive || board[idx] !== null || currentPlayer !== 0) return;
+  board[idx] = 0;
+  playTurnSound();
+  renderBoard1P();
+  if (checkWin(0)) {
+    gameActive = false;
+    playWinSound();
+    setTimeout(() => {
+      document.getElementById('turnInfo').innerText = `${players[0].character} wins!`;
+    }, 50);
+    return;
+  }
+  if (board.every(cell => cell !== null)) {
+    gameActive = false;
+    playDrawSound();
+    setTimeout(() => {
+      document.getElementById('turnInfo').innerText = `It's a draw!`;
+    }, 50);
+    return;
+  }
+  currentPlayer = 1;
+  // Only now, after player's turn, let computer move
+  setTimeout(() => {
+    computerMove();
+  }, 500);
+}
+
+function computerMove() {
+  if (!gameActive) return;
+  // Pick a random empty cell
+  const empty = board.map((v, i) => v === null ? i : null).filter(i => i !== null);
+  if (empty.length === 0) return;
+  const idx = empty[Math.floor(Math.random() * empty.length)];
+  board[idx] = 1;
+  playTurnSound();
+  renderBoard1P();
+  if (checkWin(1)) {
+    gameActive = false;
+    playWinSound();
+    setTimeout(() => {
+      document.getElementById('turnInfo').innerText = `${players[1].character} wins!`;
+    }, 50);
+    return;
+  }
+  if (board.every(cell => cell !== null)) {
+    gameActive = false;
+    playDrawSound();
+    setTimeout(() => {
+      document.getElementById('turnInfo').innerText = `It's a draw!`;
+    }, 50);
+    return;
+  }
+  currentPlayer = 0;
+  // Do not call renderBoard1P again here; wait for player's click
 }
 
 
