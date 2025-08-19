@@ -34,7 +34,6 @@ const characters = [
   { name: 'Tracker', folder: 'tracker', images: [ 'tracker.jpg','tracker2.jpg' ] }
 ];
 
-
 function renderStartScreen() {
   document.getElementById('app').innerHTML = `
     <h1>Paw Patrol Tic-Tac-Toe</h1>
@@ -46,76 +45,93 @@ function renderStartScreen() {
     renderCharacterSelect1P();
   };
   document.getElementById('twoPlayerBtn').onclick = renderCharacterSelect;
-  document.getElementById('multiPlayerBtn').onclick = startMultiplayerQueue;
+  document.getElementById('multiPlayerBtn').onclick = startMultiplayerSocketIO;
 }
 
-// --- Multiplayer (Firebase) ---
-let multiplayerRoomId = null;
-let multiplayerPlayerIdx = null;
+// --- Multiplayer (Socket.IO over ngrok) ---
 
-async function startMultiplayerQueue() {
-  // Dynamically import Firebase only when needed
-  const { db, ref, push, set, onValue, remove, get, onDisconnect } = await import('./firebase.js');
+// Read server/room from URL so you don't redeploy when ngrok URL changes
+const _params = new URLSearchParams(location.search);
+const SERVER_URL = _params.get('server') || 'https://8e8fa62100f5.ngrok-free.app';
+const DEFAULT_ROOM = _params.get('room') || 'public';
+
+let socket = null;
+let mySide = null;      // 'X' or 'O'
+let mpState = null;     // { board: [...], turn: 'X'|'O' }
+
+function startMultiplayerSocketIO() {
   document.getElementById('app').innerHTML = `
-    <h2>Multiplayer Matchmaking</h2>
-    <p>Waiting for another player to join...</p>
-    <button id="cancelQueueBtn">Cancel</button>
+    <h2>Online Multiplayer</h2>
+    <label>Room:
+      <input id="roomInput" value="${DEFAULT_ROOM}" style="width: 140px">
+    </label>
+    <div style="margin:12px 0">
+      <button id="joinX">Join as X</button>
+      <button id="joinO">Join as O</button>
+      <button id="backBtn">Back</button>
+    </div>
+    <p style="font-size:12px">Server: <code>${SERVER_URL}</code><br>
+    Tip: pass a different server with <code>?server=https://YOUR-TUNNEL.ngrok-free.app</code> and a room with <code>&room=friends</code>.</p>
   `;
-  document.getElementById('cancelQueueBtn').onclick = () => {
-    if (multiplayerRoomId) {
-      remove(ref(db, 'ttt-rooms/' + multiplayerRoomId));
-    }
-    renderStartScreen();
-  };
-  // Try to find a waiting room
-  const roomsRef = ref(db, 'ttt-rooms');
-  get(roomsRef).then(snapshot => {
-    let joined = false;
-    snapshot.forEach(childSnap => {
-      const val = childSnap.val();
-      if (val && val.status === 'waiting' && !joined) {
-        // Join this room as player 2
-        multiplayerRoomId = childSnap.key;
-        multiplayerPlayerIdx = 1;
-        set(ref(db, `ttt-rooms/${multiplayerRoomId}/player2`), { joined: true });
-        set(ref(db, `ttt-rooms/${multiplayerRoomId}/status`), 'full');
-        joined = true;
-        startMultiplayerGame(multiplayerRoomId, 1, db, ref, remove);
-      }
-    });
-    if (!joined) {
-      // Create a new room as player 1
-      const newRoomRef = push(roomsRef);
-      multiplayerRoomId = newRoomRef.key;
-      multiplayerPlayerIdx = 0;
-      set(newRoomRef, { status: 'waiting', player1: { joined: true } });
-      // Listen for player 2 to join
-      onValue(ref(db, `ttt-rooms/${multiplayerRoomId}/status`), snap => {
-        if (snap.val() === 'full') {
-          startMultiplayerGame(multiplayerRoomId, 0, db, ref, remove);
-        }
-      });
-      // Clean up room if user leaves
-      onDisconnect(ref(db, 'ttt-rooms/' + multiplayerRoomId)).remove();
-    }
+
+  document.getElementById('backBtn').onclick = renderStartScreen;
+  document.getElementById('joinX').onclick = () => joinRoom('X');
+  document.getElementById('joinO').onclick = () => joinRoom('O');
+}
+
+function joinRoom(side) {
+  mySide = side;
+  const roomId = document.getElementById('roomInput').value.trim() || 'public';
+
+  // connect
+  socket = io(SERVER_URL, { transports: ['websocket'] }); // use wss via https
+  socket.on('connect', () => {
+    socket.emit('join', roomId);
+  });
+
+  // receive authoritative state from server
+  socket.on('state', (state) => {
+    mpState = state; // {board:Array(9), turn:'X'|'O'}
+    renderBoardMP(roomId);
+  });
+
+  socket.on('disconnect', () => {
+    const ti = document.getElementById('turnInfo');
+    if (ti) ti.textContent += ' (disconnected)';
   });
 }
 
-function startMultiplayerGame(roomId, playerIdx, db, ref, remove) {
-  // Placeholder: You can add character selection and board sync here
-  document.getElementById('app').innerHTML = `
-    <h2>Multiplayer Game</h2>
-    <p>Room ID: ${roomId}</p>
-    <p>You are Player ${playerIdx + 1}</p>
-    <button id="leaveMpBtn">Leave Game</button>
-    <div id="mpGameArea"></div>
+function renderBoardMP(roomId) {
+  let html = `
+    <h2>Room: ${roomId} • You are ${mySide}</h2>
+    <div id="ttt-board" class="ttt-board">
   `;
-  document.getElementById('leaveMpBtn').onclick = () => {
-    remove(ref(db, 'ttt-rooms/' + roomId));
-    renderStartScreen();
-  };
-  // TODO: Add character selection and real-time board sync
+  for (let i = 0; i < 9; i++) {
+    const v = mpState.board[i];
+    html += `<div class="cell" data-idx="${i}">${v ? v : ''}</div>`;
+  }
+  html += `</div>
+    <h3 id="turnInfo">Turn: ${mpState.turn}</h3>
+    <button id="resetBtn">Reset</button>
+    <button id="leaveBtn">Leave</button>
+  `;
+  document.getElementById('app').innerHTML = html;
+
+  // click to play
+  document.querySelectorAll('.cell').forEach(cell => {
+    cell.onclick = () => {
+      const idx = +cell.getAttribute('data-idx');
+      if (!mpState || mpState.board[idx]) return;     // occupied
+      if (mySide !== mpState.turn) return;            // not your turn
+      socket.emit('move', { roomId, index: idx });    // server updates & broadcasts new state
+    };
+  });
+
+  document.getElementById('resetBtn').onclick = () => socket.emit('reset', roomId);
+  document.getElementById('leaveBtn').onclick = renderStartScreen;
 }
+
+
 
 // --- 1 Player Mode ---
 function renderCharacterSelect1P() {
