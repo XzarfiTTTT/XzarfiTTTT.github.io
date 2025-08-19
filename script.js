@@ -67,54 +67,212 @@ async function startMultiplayerQueue() {
     }
     renderStartScreen();
   };
-  // Try to find a waiting room
   const roomsRef = ref(db, 'ttt-rooms');
-  get(roomsRef).then(snapshot => {
-    let joined = false;
+  let joined = false;
+  let listenTimeout;
+  let pollCount = 0;
+  const maxPolls = 10; // poll for 3 seconds (10 x 300ms)
+  let statusListener = null;
+  async function tryJoin() {
+    const snapshot = await get(roomsRef);
+    let found = false;
     snapshot.forEach(childSnap => {
       const val = childSnap.val();
-      if (val && val.status === 'waiting' && !joined) {
-        // Join this room as player 2
+      // Only join if no player2 and status is waiting
+      if (val && val.status === 'waiting' && !val.player2 && !joined && !found) {
         multiplayerRoomId = childSnap.key;
         multiplayerPlayerIdx = 1;
         set(ref(db, `ttt-rooms/${multiplayerRoomId}/player2`), { joined: true });
         set(ref(db, `ttt-rooms/${multiplayerRoomId}/status`), 'full');
         joined = true;
-        startMultiplayerGame(multiplayerRoomId, 1, db, ref, remove);
+        found = true;
+        clearTimeout(listenTimeout);
+        // Listen for status change to 'full' (should be immediate, but ensures sync)
+        statusListener = onValue(ref(db, `ttt-rooms/${multiplayerRoomId}/status`), snap => {
+          if (snap.val() === 'full') {
+            if (statusListener) statusListener();
+            startMultiplayerGame(multiplayerRoomId, 1, db, ref, remove);
+          }
+        });
       }
     });
-    if (!joined) {
+    if (!joined && pollCount < maxPolls) {
+      pollCount++;
+      listenTimeout = setTimeout(tryJoin, 300);
+    } else if (!joined) {
       // Create a new room as player 1
       const newRoomRef = push(roomsRef);
       multiplayerRoomId = newRoomRef.key;
       multiplayerPlayerIdx = 0;
       set(newRoomRef, { status: 'waiting', player1: { joined: true } });
       // Listen for player 2 to join
-      onValue(ref(db, `ttt-rooms/${multiplayerRoomId}/status`), snap => {
+      statusListener = onValue(ref(db, `ttt-rooms/${multiplayerRoomId}/status`), snap => {
         if (snap.val() === 'full') {
+          if (statusListener) statusListener();
           startMultiplayerGame(multiplayerRoomId, 0, db, ref, remove);
         }
       });
       // Clean up room if user leaves
       onDisconnect(ref(db, 'ttt-rooms/' + multiplayerRoomId)).remove();
     }
-  });
+  }
+  tryJoin();
 }
 
 function startMultiplayerGame(roomId, playerIdx, db, ref, remove) {
-  // Placeholder: You can add character selection and board sync here
-  document.getElementById('app').innerHTML = `
-    <h2>Multiplayer Game</h2>
-    <p>Room ID: ${roomId}</p>
-    <p>You are Player ${playerIdx + 1}</p>
-    <button id="leaveMpBtn">Leave Game</button>
-    <div id="mpGameArea"></div>
-  `;
-  document.getElementById('leaveMpBtn').onclick = () => {
-    remove(ref(db, 'ttt-rooms/' + roomId));
-    renderStartScreen();
-  };
-  // TODO: Add character selection and real-time board sync
+  // Multiplayer character/image selection for both players
+  const charSelRef = ref(db, `ttt-rooms/${roomId}/charSel`);
+  const boardRef = ref(db, `ttt-rooms/${roomId}/board`);
+  const turnRef = ref(db, `ttt-rooms/${roomId}/turn`);
+  const statusRef = ref(db, `ttt-rooms/${roomId}/status`);
+  let mpBoard = Array(9).fill(null);
+  let mpTurn = 0;
+  let mpActive = true;
+  let mpPlayers = [null, null];
+
+  // Step 1: Character selection for both players
+  function renderMpCharSelect() {
+    document.getElementById('mpGameArea').innerHTML = `
+      <h2>Player ${playerIdx + 1}: Choose your character</h2>
+      <div id="charSelectMp" class="char-select"></div>
+    `;
+    const charDiv = document.getElementById('charSelectMp');
+    characters.forEach((char, idx) => {
+      const mainImg = char.images[0];
+      if (!mainImg) return;
+      const btn = document.createElement('button');
+      btn.innerHTML = `<img src="assets/${char.folder}/${mainImg}" alt="${char.name}" width="80"><br>${char.name}`;
+      btn.onclick = () => {
+        renderMpImgSelect(idx);
+      };
+      charDiv.appendChild(btn);
+    });
+  }
+
+  function renderMpImgSelect(charIdx) {
+    const char = characters[charIdx];
+    document.getElementById('mpGameArea').innerHTML = `
+      <h2>Player ${playerIdx + 1}: Choose your ${char.name} picture</h2>
+      <div id="imgSelectMp" class="char-select"></div>
+    `;
+    const imgDiv = document.getElementById('imgSelectMp');
+    char.images.forEach((img, i) => {
+      const btn = document.createElement('button');
+      btn.innerHTML = `<img src="assets/${char.folder}/${img}" alt="${char.name}" width="80">`;
+      btn.onclick = () => {
+        // Save selection to DB
+        set(ref(db, `ttt-rooms/${roomId}/charSel/player${playerIdx+1}`), {
+          character: char.name,
+          image: `assets/${char.folder}/${img}`
+        });
+      };
+      imgDiv.appendChild(btn);
+    });
+  }
+
+  // Listen for both players' selections
+  onValue(charSelRef, snap => {
+    const val = snap.val();
+    if (val) {
+      mpPlayers[0] = val.player1 || null;
+      mpPlayers[1] = val.player2 || null;
+      if (mpPlayers[0] && mpPlayers[1]) {
+        // Both selected, start game
+        startMpBoard();
+      }
+    }
+  });
+  renderMpCharSelect();
+
+  // Step 2: Board logic (after both select)
+  function startMpBoard() {
+    if (playerIdx === 0) {
+      set(boardRef, Array(9).fill(null));
+      set(turnRef, 0);
+    }
+    renderMpBoard();
+    // Listen for board and turn changes
+    onValue(boardRef, snap => {
+      if (snap.exists()) {
+        mpBoard = snap.val();
+        renderMpBoard();
+      }
+    });
+    onValue(turnRef, snap => {
+      if (snap.exists()) {
+        mpTurn = snap.val();
+        renderMpBoard();
+      }
+    });
+    onValue(statusRef, snap => {
+      if (snap.val() !== 'full') {
+        mpActive = false;
+        renderStartScreen();
+      }
+    });
+  }
+
+  function renderMpBoard() {
+    let html = `
+      <h2>Multiplayer Game</h2>
+      <p>Room ID: ${roomId}</p>
+      <p>You are Player ${playerIdx + 1}</p>
+      <div id="ttt-board" class="ttt-board">
+    `;
+    for (let i = 0; i < 9; i++) {
+      html += `<div class="cell" data-idx="${i}">`;
+      if (mpBoard[i] !== null && mpPlayers[mpBoard[i]]) {
+        html += `<img src="${mpPlayers[mpBoard[i]].image}" alt="${mpPlayers[mpBoard[i]].character}" width="60">`;
+      }
+      html += `</div>`;
+    }
+    html += '</div>';
+    html += `<h3 id="turnInfo">${mpActive ? (mpTurn === playerIdx ? 'Your turn' : 'Opponent\'s turn') : 'Game ended'}</h3>`;
+    html += `<button id="leaveMpBtn">Leave Game</button>`;
+    document.getElementById('mpGameArea').innerHTML = html;
+
+    document.querySelectorAll('.cell').forEach(cell => {
+      cell.onclick = onMpCellClick;
+    });
+    document.getElementById('leaveMpBtn').onclick = () => {
+      remove(ref(db, 'ttt-rooms/' + roomId));
+      renderStartScreen();
+    };
+  }
+
+  function onMpCellClick(e) {
+    const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
+    if (!mpActive || mpBoard[idx] !== null || mpTurn !== playerIdx) return;
+    mpBoard[idx] = playerIdx;
+    set(boardRef, mpBoard);
+    // Check for win/draw
+    if (checkWinMp(mpBoard, playerIdx)) {
+      mpActive = false;
+      set(statusRef, `win${playerIdx}`);
+      setTimeout(() => {
+        document.getElementById('turnInfo').innerText = 'You win!';
+      }, 50);
+      return;
+    }
+    if (mpBoard.every(cell => cell !== null)) {
+      mpActive = false;
+      set(statusRef, 'draw');
+      setTimeout(() => {
+        document.getElementById('turnInfo').innerText = `It's a draw!`;
+      }, 50);
+      return;
+    }
+    set(turnRef, 1 - playerIdx);
+  }
+
+  function checkWinMp(board, idx) {
+    const wins = [
+      [0,1,2],[3,4,5],[6,7,8],
+      [0,3,6],[1,4,7],[2,5,8],
+      [0,4,8],[2,4,6]
+    ];
+    return wins.some(line => line.every(i => board[i] === idx));
+  }
 }
 
 // --- 1 Player Mode ---
