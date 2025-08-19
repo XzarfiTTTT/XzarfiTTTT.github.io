@@ -40,11 +40,81 @@ function renderStartScreen() {
     <h1>Paw Patrol Tic-Tac-Toe</h1>
     <button id="onePlayerBtn">1 Player</button>
     <button id="twoPlayerBtn">2 Player</button>
+    <button id="multiPlayerBtn">Multiplayer</button>
   `;
   document.getElementById('onePlayerBtn').onclick = () => {
     renderCharacterSelect1P();
   };
   document.getElementById('twoPlayerBtn').onclick = renderCharacterSelect;
+  document.getElementById('multiPlayerBtn').onclick = startMultiplayerQueue;
+}
+
+// --- Multiplayer (Firebase) ---
+let multiplayerRoomId = null;
+let multiplayerPlayerIdx = null;
+
+async function startMultiplayerQueue() {
+  // Dynamically import Firebase only when needed
+  const { db, ref, push, set, onValue, remove, get, onDisconnect } = await import('./firebase.js');
+  document.getElementById('app').innerHTML = `
+    <h2>Multiplayer Matchmaking</h2>
+    <p>Waiting for another player to join...</p>
+    <button id="cancelQueueBtn">Cancel</button>
+  `;
+  document.getElementById('cancelQueueBtn').onclick = () => {
+    if (multiplayerRoomId) {
+      remove(ref(db, 'ttt-rooms/' + multiplayerRoomId));
+    }
+    renderStartScreen();
+  };
+  // Try to find a waiting room
+  const roomsRef = ref(db, 'ttt-rooms');
+  get(roomsRef).then(snapshot => {
+    let joined = false;
+    snapshot.forEach(childSnap => {
+      const val = childSnap.val();
+      if (val && val.status === 'waiting' && !joined) {
+        // Join this room as player 2
+        multiplayerRoomId = childSnap.key;
+        multiplayerPlayerIdx = 1;
+        set(ref(db, `ttt-rooms/${multiplayerRoomId}/player2`), { joined: true });
+        set(ref(db, `ttt-rooms/${multiplayerRoomId}/status`), 'full');
+        joined = true;
+        startMultiplayerGame(multiplayerRoomId, 1, db, ref, remove);
+      }
+    });
+    if (!joined) {
+      // Create a new room as player 1
+      const newRoomRef = push(roomsRef);
+      multiplayerRoomId = newRoomRef.key;
+      multiplayerPlayerIdx = 0;
+      set(newRoomRef, { status: 'waiting', player1: { joined: true } });
+      // Listen for player 2 to join
+      onValue(ref(db, `ttt-rooms/${multiplayerRoomId}/status`), snap => {
+        if (snap.val() === 'full') {
+          startMultiplayerGame(multiplayerRoomId, 0, db, ref, remove);
+        }
+      });
+      // Clean up room if user leaves
+      onDisconnect(ref(db, 'ttt-rooms/' + multiplayerRoomId)).remove();
+    }
+  });
+}
+
+function startMultiplayerGame(roomId, playerIdx, db, ref, remove) {
+  // Placeholder: You can add character selection and board sync here
+  document.getElementById('app').innerHTML = `
+    <h2>Multiplayer Game</h2>
+    <p>Room ID: ${roomId}</p>
+    <p>You are Player ${playerIdx + 1}</p>
+    <button id="leaveMpBtn">Leave Game</button>
+    <div id="mpGameArea"></div>
+  `;
+  document.getElementById('leaveMpBtn').onclick = () => {
+    remove(ref(db, 'ttt-rooms/' + roomId));
+    renderStartScreen();
+  };
+  // TODO: Add character selection and real-time board sync
 }
 
 // --- 1 Player Mode ---
