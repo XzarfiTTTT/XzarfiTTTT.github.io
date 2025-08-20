@@ -34,12 +34,14 @@ const characters = [
   { name: 'Tracker', folder: 'tracker', images: [ 'tracker.jpg','tracker2.jpg' ] }
 ];
 
+
 function renderStartScreen() {
   document.getElementById('app').innerHTML = `
     <h1>Paw Patrol Tic-Tac-Toe</h1>
     <button id="onePlayerBtn">1 Player</button>
     <button id="twoPlayerBtn">2 Player</button>
     <button id="multiPlayerBtn">Private Multiplayer</button>
+    <button id="firebaseMultiBtn">Firebase Multiplayer</button>
   `;
   document.getElementById('onePlayerBtn').onclick = () => {
     renderCharacterSelect1P();
@@ -53,6 +55,15 @@ function renderStartScreen() {
     alert('Multiplayer module failed to load.');
   }
 };
+
+//Firebase Multiplayer function call
+  document.getElementById('firebaseMultiBtn').onclick = () => {
+    if (typeof window.startFirebaseMultiplayer === 'function') {
+      window.startFirebaseMultiplayer();
+    } else {
+      alert('Firebase multiplayer module failed to load.');
+    }
+  };
 }
 // Multiplayer logic moved to multiplayer.js
 window.renderStartScreen = renderStartScreen;
