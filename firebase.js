@@ -120,18 +120,19 @@ function joinFirebaseRoom(roomId) {
   fbRoomRef = ref(db, 'fbrooms/' + roomId);
   get(fbRoomRef).then(snap => {
     let val = snap.val();
-    if (!val || !val.players) {
-      // First player
+    let players = (val && val.players) ? val.players.slice() : [null, null];
+    // Claim a slot if not already claimed
+    if (!players[0]) {
       fbPlayerNum = 0;
-      set(fbRoomRef, { players: [null, null], board: Array(9).fill(null), currentPlayer: 0, gameActive: false, waiting: true });
-    } else if (val.players[0] && val.players[1]) {
+      players[0] = { name: `Player 1` };
+    } else if (!players[1]) {
+      fbPlayerNum = 1;
+      players[1] = { name: `Player 2` };
+    } else {
       document.getElementById('fbStatus').innerText = 'Room full!';
       return;
-    } else {
-      fbPlayerNum = val.players[0] ? 1 : 0;
-      // Set waiting to false, both players present
-      set(fbRoomRef, { ...val, waiting: false });
     }
+    set(fbRoomRef, { ...(val || {}), players, waiting: false });
     if (fbUnsub) fbUnsub();
     fbUnsub = onValue(fbRoomRef, (snap) => {
       const state = snap.val();
@@ -140,19 +141,18 @@ function joinFirebaseRoom(roomId) {
       fbBoard = state.board || fbBoard;
       fbCurrentPlayer = state.currentPlayer ?? 0;
       fbGameActive = state.gameActive ?? false;
-      // If room has two slots, always show character select (even if both are null)
+      // If room has two slots, always show character select
       if (state.players && state.players.length === 2) {
         renderFirebaseCharacterSelect();
       } else {
-        // Only show waiting if truly alone (room not ready)
         renderFirebaseWaitingScreen();
       }
       // Start game if both have picked
-      if (state.players && state.players.length === 2 && state.players[0] && state.players[1] && !fbGameActive) {
+      if (state.players && state.players.length === 2 && state.players[0].character && state.players[1].character && !fbGameActive) {
         set(fbRoomRef, { ...state, gameActive: true });
       }
       // Show board if game is active
-      if (fbGameActive && state.players && state.players[0] && state.players[1]) {
+      if (fbGameActive && state.players && state.players[0].character && state.players[1].character) {
         renderFirebaseBoard();
       }
     });
@@ -241,7 +241,8 @@ function renderFirebaseCharacterSelect() {
     const btn = document.createElement('button');
     btn.innerHTML = `<img src="assets/${char.folder}/${mainImg}" alt="${char.name}" width="80"><br>${char.name}`;
     btn.onclick = () => {
-      fbPlayers[fbPlayerNum] = { name: `Player ${fbPlayerNum+1}`, character: char.name, image: `assets/${char.folder}/${mainImg}`, charIdx: idx };
+      // Only update this player's slot
+      fbPlayers[fbPlayerNum] = { ...fbPlayers[fbPlayerNum], character: char.name, image: `assets/${char.folder}/${mainImg}`, charIdx: idx };
       set(fbRoomRef, { players: fbPlayers, board: fbBoard, currentPlayer: 0, gameActive: false });
       renderFirebaseImageSelect(idx);
     };
@@ -262,6 +263,7 @@ function renderFirebaseImageSelect(charIdx) {
     const btn = document.createElement('button');
     btn.innerHTML = `<img src="assets/${char.folder}/${img}" alt="${char.name}" width="80">`;
     btn.onclick = () => {
+      // Only update this player's slot
       fbPlayers[fbPlayerNum].image = `assets/${char.folder}/${img}`;
       set(fbRoomRef, { players: fbPlayers, board: fbBoard, currentPlayer: 0, gameActive: false });
     };
