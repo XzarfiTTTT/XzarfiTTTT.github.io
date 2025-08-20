@@ -1,6 +1,6 @@
 // Sound functions are now in sound.js
 document.getElementById('app').innerHTML = `
-  <h1>Paw Patrol Tic-Tac-Toe</h1>
+  <h1>Themed Tic-Tac-Toe</h1>
   <button id="startBtn">Start Game</button>
 `;
 
@@ -37,7 +37,7 @@ const characters = [
 
 function renderStartScreen() {
   document.getElementById('app').innerHTML = `
-    <h1>Paw Patrol Tic-Tac-Toe</h1>
+    <h1>Themed Tic-Tac-Toe</h1>
     <button id="onePlayerBtn">1 Player</button>
     <button id="twoPlayerBtn">2 Player</button>
     <button id="multiPlayerBtn">Private Multiplayer</button>
