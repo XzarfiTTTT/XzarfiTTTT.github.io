@@ -46,8 +46,13 @@ function renderStartScreen() {
   };
   document.getElementById('twoPlayerBtn').onclick = renderCharacterSelect;
   document.getElementById('multiPlayerBtn').onclick = () => {
-    if (window.startPrivateMultiplayer) window.startPrivateMultiplayer();
-  };
+  if (typeof window.startPrivateMultiplayer === 'function') {
+    window.startPrivateMultiplayer();
+  } else {
+    console.error('multiplayer.js not loaded (startPrivateMultiplayer missing).');
+    alert('Multiplayer module failed to load.');
+  }
+};
 }
 // Multiplayer logic moved to multiplayer.js
 window.renderStartScreen = renderStartScreen;
