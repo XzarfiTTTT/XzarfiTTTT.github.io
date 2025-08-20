@@ -208,11 +208,12 @@ function joinFirebaseRoom(roomId) {
 }
 
 function renderFirebaseWaitingScreen() {
-  document.getElementById('app').innerHTML = `
-    <h2>Waiting for opponent to join...</h2>
-    <div id="chatContainer"></div>
-    <button id="leaveBtn">Leave Room</button>
-  `;
+  let html = '';
+  if (window.fbRoomId) html += `<div id="roomNameDisplay" style="font-size:13px; color:#555; margin-bottom:4px;">Room: ${window.fbRoomId}</div>`;
+  html += `<h2>Waiting for opponent to join...</h2>`;
+  html += `<div id="chatContainer"></div>`;
+  html += `<button id="leaveBtn">Leave Room</button>`;
+  document.getElementById('app').innerHTML = html;
   setTimeout(() => { if (window.initChat) window.initChat(fbRoomId, `Player ${fbPlayerNum + 1}`); }, 100);
   document.getElementById('leaveBtn').onclick = () => {
     if (fbUnsub) fbUnsub();
@@ -292,7 +293,12 @@ function renderFirebaseCharacterSelect() {
     <div id="chatContainer"></div>
     <button id="backBtn">Back</button>
   `;
-  setTimeout(() => { if (window.initChat) window.initChat(fbRoomId, `Player ${fbPlayerNum + 1}`); }, 100);
+  // Only initialize chat if not present
+  setTimeout(() => {
+    if (!document.getElementById('chatBox') && window.initChat) window.initChat(fbRoomId, `Player ${fbPlayerNum + 1}`);
+  }, 100);
+  // Always clear previous timer
+  if (fbCharSelectTimeout) clearInterval(fbCharSelectTimeout);
   const charDiv = document.getElementById('fbCharSelect');
   window.characters.forEach((char, idx) => {
     const mainImg = char.images[0];
@@ -338,15 +344,21 @@ function renderFirebaseCharacterSelect() {
 function renderFirebaseImageSelect(charIdx) {
   const char = window.characters[charIdx];
   let imgSelectTime = 30;
-  document.getElementById('app').innerHTML = `
-    <h2>${fbPlayers[fbPlayerNum].name}: Choose your ${char.name} picture</h2>
-    <div id="fbImgSelect" class="char-select"></div>
-    <div id="fbStatus" style="margin:12px 0; color:#333; font-weight:bold;"></div>
-    <div id="fbTimer" style="margin:8px 0; color:#555;"></div>
-    <div id="chatContainer"></div>
-    <button id="backBtn">Back</button>
-  `;
-  setTimeout(() => { if (window.initChat) window.initChat(fbRoomId, `Player ${fbPlayerNum + 1}`); }, 100);
+  let html = '';
+  if (window.fbRoomId) html += `<div id="roomNameDisplay" style="font-size:13px; color:#555; margin-bottom:4px;">Room: ${window.fbRoomId}</div>`;
+  html += `<h2>${fbPlayers[fbPlayerNum].name}: Choose your ${char.name} picture</h2>`;
+  html += `<div id="fbImgSelect" class="char-select"></div>`;
+  html += `<div id="fbStatus" style="margin:12px 0; color:#333; font-weight:bold;"></div>`;
+  html += `<div id="fbTimer" style="margin:8px 0; color:#555;"></div>`;
+  html += `<div id="chatContainer"></div>`;
+  html += `<button id="backBtn">Back</button>`;
+  document.getElementById('app').innerHTML = html;
+  // Only initialize chat if not present
+  setTimeout(() => {
+    if (!document.getElementById('chatBox') && window.initChat) window.initChat(fbRoomId, `Player ${fbPlayerNum + 1}`);
+  }, 100);
+  // Always clear previous timer
+  if (fbImgSelectTimeout) clearInterval(fbImgSelectTimeout);
   const imgDiv = document.getElementById('fbImgSelect');
   let alreadyPicked = fbPlayers[fbPlayerNum] && fbPlayers[fbPlayerNum].image;
   char.images.forEach((img, i) => {
@@ -388,7 +400,9 @@ function renderFirebaseImageSelect(charIdx) {
 }
 
 function renderFirebaseBoard() {
-  let html = `<h2>${fbPlayers[0]?.character || 'Player 1'} vs ${fbPlayers[1]?.character || 'Player 2'}</h2>`;
+  let html = '';
+  if (window.fbRoomId) html += `<div id="roomNameDisplay" style="font-size:13px; color:#555; margin-bottom:4px;">Room: ${window.fbRoomId}</div>`;
+  html += `<h2>${fbPlayers[0]?.character || 'Player 1'} vs ${fbPlayers[1]?.character || 'Player 2'}</h2>`;
   html += `<div id="ttt-board" class="ttt-board">`;
   for (let i = 0; i < 9; i++) {
     html += `<div class="cell" data-idx="${i}">`;
@@ -413,23 +427,7 @@ function renderFirebaseBoard() {
   document.getElementById('restartBtn').onclick = () => {
     set(fbRoomRef, { players: fbPlayers, board: Array(9).fill(null), currentPlayer: 0, gameActive: true });
   };
-  document.getElementById('leaveBtn').onclick = () => {
-    if (fbUnsub) fbUnsub();
-    if (window.destroyChat) window.destroyChat();
-    // Clean up room if alone
-    if (fbRoomRef) {
-      get(fbRoomRef).then(snap => {
-        const val = snap.val();
-        if (val && (!val.players[0] || !val.players[1])) {
-          remove(fbRoomRef);
-        }
-      });
-    }
-    fbRoomId = null;
-    fbRoomRef = null;
-    fbUnsub = null;
-    if (window.renderStartScreen) window.renderStartScreen();
-  };
+  // ...existing code...
 }
 
 function onFirebaseCellClick(e) {

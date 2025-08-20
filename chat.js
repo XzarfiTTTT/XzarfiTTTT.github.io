@@ -14,7 +14,9 @@ export function initChat(roomId, playerName) {
     <input id="chatInput" type="text" maxlength="100" placeholder="Type a message..." style="width:70%"> <button id="chatSend">Send</button>
   `;
   setTimeout(() => {
-    document.getElementById('app').appendChild(chatBox);
+    // Always append to chatContainer if present, else fallback to app
+    const container = document.getElementById('chatContainer') || document.getElementById('app');
+    if (!document.getElementById('chatBox')) container.appendChild(chatBox);
     document.getElementById('chatSend').onclick = sendMsg;
     document.getElementById('chatInput').onkeydown = (e) => { if (e.key === 'Enter') sendMsg(); };
   }, 100);
