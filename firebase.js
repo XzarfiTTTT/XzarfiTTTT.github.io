@@ -165,31 +165,41 @@ function joinFirebaseRoom(roomId) {
       fbBoard = state.board || fbBoard;
       fbCurrentPlayer = state.currentPlayer ?? 0;
       fbGameActive = state.gameActive ?? false;
-      // If room has two slots, always show character select
-      if (state.players && state.players.length === 2) {
-        renderFirebaseCharacterSelect();
-      } else {
+      // Robust state-driven UI flow:
+      if (!state.players || state.players.length < 2) {
         renderFirebaseWaitingScreen();
+        return;
       }
-      // Start game if both have picked character and image
+      // If this player hasn't picked character, show character select
+      if (!fbPlayers[fbPlayerNum]?.character) {
+        renderFirebaseCharacterSelect();
+        return;
+      }
+      // If this player hasn't picked image, show image select
+      if (!fbPlayers[fbPlayerNum]?.image) {
+        renderFirebaseImageSelect(fbPlayers[fbPlayerNum].charIdx);
+        return;
+      }
+      // If both players have picked character and image, but game not started, start it
       if (
-        state.players &&
-        state.players.length === 2 &&
-        state.players[0].character && state.players[1].character &&
-        state.players[0].image && state.players[1].image &&
+        fbPlayers[0]?.character && fbPlayers[1]?.character &&
+        fbPlayers[0]?.image && fbPlayers[1]?.image &&
         !fbGameActive
       ) {
         set(fbRoomRef, { ...state, gameActive: true });
+        return;
       }
-      // Show board if game is active
+      // If game is active, show board
       if (
         fbGameActive &&
-        state.players &&
-        state.players[0].character && state.players[1].character &&
-        state.players[0].image && state.players[1].image
+        fbPlayers[0]?.character && fbPlayers[1]?.character &&
+        fbPlayers[0]?.image && fbPlayers[1]?.image
       ) {
         renderFirebaseBoard();
+        return;
       }
+      // Fallback: waiting screen
+      renderFirebaseWaitingScreen();
       // Show player left message if opponent leaves
       if (state.players && state.players.length === 2) {
         const other = 1 - fbPlayerNum;
@@ -425,7 +435,28 @@ function renderFirebaseBoard() {
     cell.onclick = (e) => onFirebaseCellClick(e);
   });
   document.getElementById('restartBtn').onclick = () => {
-    set(fbRoomRef, { players: fbPlayers, board: Array(9).fill(null), currentPlayer: 0, gameActive: true });
+    // Reset board, currentPlayer, and gameActive for both players
+    set(fbRoomRef, { ...fbPlayers && { players: fbPlayers }, board: Array(9).fill(null), currentPlayer: 0, gameActive: true });
+  };
+  document.getElementById('leaveBtn').onclick = () => {
+    if (fbUnsub) fbUnsub();
+    if (window.destroyChat) window.destroyChat();
+    // Remove player from room
+    get(fbRoomRef).then(snap => {
+      const val = snap.val();
+      if (val && val.players) {
+        val.players[fbPlayerNum] = null;
+        set(fbRoomRef, { ...val, players: val.players });
+        // If both players left, remove room
+        if (!val.players[0] && !val.players[1]) {
+          remove(fbRoomRef);
+        }
+      }
+    });
+    fbRoomId = null;
+    fbRoomRef = null;
+    fbUnsub = null;
+    if (window.renderStartScreen) window.renderStartScreen();
   };
   // ...existing code...
 }
