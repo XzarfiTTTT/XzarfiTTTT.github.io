@@ -124,7 +124,6 @@ function joinFirebaseRoom(roomId) {
       // First player
       fbPlayerNum = 0;
       set(fbRoomRef, { players: [null, null], board: Array(9).fill(null), currentPlayer: 0, gameActive: false, waiting: true });
-      renderFirebaseWaitingScreen();
     } else if (val.players[0] && val.players[1]) {
       document.getElementById('fbStatus').innerText = 'Room full!';
       return;
@@ -132,7 +131,6 @@ function joinFirebaseRoom(roomId) {
       fbPlayerNum = val.players[0] ? 1 : 0;
       // Set waiting to false, both players present
       set(fbRoomRef, { ...val, waiting: false });
-      renderFirebaseWaitingScreen();
     }
     if (fbUnsub) fbUnsub();
     fbUnsub = onValue(fbRoomRef, (snap) => {
@@ -142,14 +140,20 @@ function joinFirebaseRoom(roomId) {
       fbBoard = state.board || fbBoard;
       fbCurrentPlayer = state.currentPlayer ?? 0;
       fbGameActive = state.gameActive ?? false;
-      if (state.waiting) {
+      // Only show waiting if truly alone (no other player joined yet)
+      if (state.players && state.players.length === 2 && state.players[0] === null && state.players[1] === null && state.waiting) {
         renderFirebaseWaitingScreen();
-      } else if (!fbPlayers[0] || !fbPlayers[1]) {
-        renderFirebaseCharacterSelect();
-      } else if (!fbGameActive) {
-        set(fbRoomRef, { ...state, gameActive: true });
-      } else if (fbGameActive) {
-        renderFirebaseBoard();
+      } else if (!state.players || state.players.length !== 2) {
+        renderFirebaseWaitingScreen();
+      } else {
+        // Always show character select if either slot is unpicked
+        if (!fbPlayers[fbPlayerNum] || !fbPlayers[1 - fbPlayerNum]) {
+          renderFirebaseCharacterSelect();
+        } else if (!fbGameActive) {
+          set(fbRoomRef, { ...state, gameActive: true });
+        } else if (fbGameActive) {
+          renderFirebaseBoard();
+        }
       }
     });
   });
