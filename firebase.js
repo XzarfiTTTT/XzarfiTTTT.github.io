@@ -1,3 +1,20 @@
+// Ensure window.characters is available for multiplayer character select
+if (!window.characters) {
+  window.characters = [
+    { name: 'Marshall', folder: 'marshal', images: [ 'marshal.jpg','marshal2.jpg','marshal3.jpg','marshal4.jpg','marshal5.jpg','marshal6.jpg','marshal7.jpg','marshal8.jpg','marshal9.jpg','marshal10.jpg','marshal11.jpg','marshal12.jpg','marshal13.jpg','marshal14.jpg' ] },
+    { name: 'Skye', folder: 'skye', images: [ 'skye.jpg','skye2.jpg','skye3.jpg','skye4.jpg','skye5.jpg','skye6.jpg','skye7.jpg','skye8.jpg','skye9.jpg','skye10.jpg','skye11.jpg','skye12.jpg','skye13.jpg' ] },
+    { name: 'Chase', folder: 'chase', images: [ 'chase.jpg','chase2.jpg','chase3.jpg','chase4.jpg','chase5.jpg','chase6.jpg' ] },
+    { name: 'Everest', folder: 'everest', images: [ 'everest.jpg','everest2.jpg','everest3.jpg' ] },
+    { name: 'Rocky', folder: 'rocky', images: [ 'rocky.jpg','rocky1.jpg','rocky2.jpg','rocky3.jpg','rocky4.jpg','rocky5.jpg','rocky6.jpg','rocky7.jpg','rocky8.jpg','rocky9.jpg','rocky10.jpg','rocky11.jpg','rocky12.jpg' ] },
+    { name: 'Rubble', folder: 'rubble', images: [ 'rubble.jpg','rubble1.jpg','rubble2.jpg','rubble3.jpg','rubble4.jpg','rubble5.jpg','rubble6.jpg','rubble7.jpg','rubble8.jpg','rubble10.jpg','rubble11.jpg','rubble12.jpg','rubble14.jpg','rubble15.jpg','rubble16.jpg','gravel.jpg','gravel1.jpg','hubcap.jpg' ] },
+    { name: 'Zuma', folder: 'zuma', images: [ 'zuma.jpg','zuma2.jpg','zuma3.jpg','zuma4.jpg','zuma5.jpg','zuma6.jpg','zuma7.jpg','zuma8.jpg','zuma9.jpg','zuma10.jpg' ] },
+    { name: 'Ella', folder: 'ella', images: [ 'ella.jpg' ] },
+    { name: 'Liberty', folder: 'liberty', images: [ 'liberty.jpg' ] },
+    { name: 'Merpups', folder: 'merpups', images: [ 'merpup1.jpg','merpup2.jpg','merpup3.jpg' ] },
+    { name: 'Nano', folder: 'nano', images: [ 'nano.jpg' ] },
+    { name: 'Tracker', folder: 'tracker', images: [ 'tracker.jpg','tracker2.jpg' ] }
+  ];
+}
 // Firebase configuration for multiplayer
 
 // Import the functions you need from the SDKs you need
@@ -124,10 +141,10 @@ function joinFirebaseRoom(roomId) {
     // Claim a slot if not already claimed
     if (!players[0]) {
       fbPlayerNum = 0;
-      players[0] = { name: `Player 1` };
+      players[0] = { name: `Player 1`, character: null, image: null, charIdx: null };
     } else if (!players[1]) {
       fbPlayerNum = 1;
-      players[1] = { name: `Player 2` };
+      players[1] = { name: `Player 2`, character: null, image: null, charIdx: null };
     } else {
       document.getElementById('fbStatus').innerText = 'Room full!';
       return;
@@ -147,12 +164,23 @@ function joinFirebaseRoom(roomId) {
       } else {
         renderFirebaseWaitingScreen();
       }
-      // Start game if both have picked
-      if (state.players && state.players.length === 2 && state.players[0].character && state.players[1].character && !fbGameActive) {
+      // Start game if both have picked character and image
+      if (
+        state.players &&
+        state.players.length === 2 &&
+        state.players[0].character && state.players[1].character &&
+        state.players[0].image && state.players[1].image &&
+        !fbGameActive
+      ) {
         set(fbRoomRef, { ...state, gameActive: true });
       }
       // Show board if game is active
-      if (fbGameActive && state.players && state.players[0].character && state.players[1].character) {
+      if (
+        fbGameActive &&
+        state.players &&
+        state.players[0].character && state.players[1].character &&
+        state.players[0].image && state.players[1].image
+      ) {
         renderFirebaseBoard();
       }
     });
