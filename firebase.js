@@ -140,20 +140,20 @@ function joinFirebaseRoom(roomId) {
       fbBoard = state.board || fbBoard;
       fbCurrentPlayer = state.currentPlayer ?? 0;
       fbGameActive = state.gameActive ?? false;
-      // Only show waiting if truly alone (no other player joined yet)
-      if (state.players && state.players.length === 2 && state.players[0] === null && state.players[1] === null && state.waiting) {
-        renderFirebaseWaitingScreen();
-      } else if (!state.players || state.players.length !== 2) {
-        renderFirebaseWaitingScreen();
+      // If room has two slots, always show character select (even if both are null)
+      if (state.players && state.players.length === 2) {
+        renderFirebaseCharacterSelect();
       } else {
-        // Always show character select if either slot is unpicked
-        if (!fbPlayers[fbPlayerNum] || !fbPlayers[1 - fbPlayerNum]) {
-          renderFirebaseCharacterSelect();
-        } else if (!fbGameActive) {
-          set(fbRoomRef, { ...state, gameActive: true });
-        } else if (fbGameActive) {
-          renderFirebaseBoard();
-        }
+        // Only show waiting if truly alone (room not ready)
+        renderFirebaseWaitingScreen();
+      }
+      // Start game if both have picked
+      if (state.players && state.players.length === 2 && state.players[0] && state.players[1] && !fbGameActive) {
+        set(fbRoomRef, { ...state, gameActive: true });
+      }
+      // Show board if game is active
+      if (fbGameActive && state.players && state.players[0] && state.players[1]) {
+        renderFirebaseBoard();
       }
     });
   });
