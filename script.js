@@ -39,15 +39,17 @@ function renderStartScreen() {
     <h1>Paw Patrol Tic-Tac-Toe</h1>
     <button id="onePlayerBtn">1 Player</button>
     <button id="twoPlayerBtn">2 Player</button>
-    <button id="multiPlayerBtn">Multiplayer</button>
+    <button id="multiPlayerBtn">Private Multiplayer</button>
   `;
   document.getElementById('onePlayerBtn').onclick = () => {
     renderCharacterSelect1P();
   };
   document.getElementById('twoPlayerBtn').onclick = renderCharacterSelect;
-  document.getElementById('multiPlayerBtn').onclick = startMultiplayerSocketIO;
+  document.getElementById('multiPlayerBtn').onclick = () => {
+    if (window.startPrivateMultiplayer) window.startPrivateMultiplayer();
+  };
 }
-
+// Multiplayer logic moved to multiplayer.js
 // --- 1 Player Mode ---
 function renderCharacterSelect1P() {
   document.getElementById('app').innerHTML = `
