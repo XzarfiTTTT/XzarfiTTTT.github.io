@@ -50,6 +50,7 @@ function renderStartScreen() {
   };
 }
 // Multiplayer logic moved to multiplayer.js
+window.renderStartScreen = renderStartScreen;
 // --- 1 Player Mode ---
 function renderCharacterSelect1P() {
   document.getElementById('app').innerHTML = `
