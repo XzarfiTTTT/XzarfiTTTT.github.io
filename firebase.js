@@ -257,9 +257,11 @@ function startFirebaseCharacterSelect(roomId) {
 }
 
 function renderFirebaseCharacterSelect() {
+  let alreadyPicked = fbPlayers[fbPlayerNum] && fbPlayers[fbPlayerNum].character;
   document.getElementById('app').innerHTML = `
     <h2>${fbPlayerNum === 0 ? 'Player 1' : 'Player 2'}: Choose your character</h2>
     <div id="fbCharSelect" class="char-select"></div>
+    <div id="fbStatus" style="margin:12px 0; color:#333; font-weight:bold;"></div>
     <button id="backBtn">Back</button>
   `;
   const charDiv = document.getElementById('fbCharSelect');
@@ -268,8 +270,9 @@ function renderFirebaseCharacterSelect() {
     if (!mainImg) return;
     const btn = document.createElement('button');
     btn.innerHTML = `<img src="assets/${char.folder}/${mainImg}" alt="${char.name}" width="80"><br>${char.name}`;
+    btn.disabled = alreadyPicked;
     btn.onclick = () => {
-      // Only update this player's slot
+      if (alreadyPicked) return;
       fbPlayers[fbPlayerNum] = { ...fbPlayers[fbPlayerNum], character: char.name, image: `assets/${char.folder}/${mainImg}`, charIdx: idx };
       set(fbRoomRef, { players: fbPlayers, board: fbBoard, currentPlayer: 0, gameActive: false });
       renderFirebaseImageSelect(idx);
@@ -277,6 +280,10 @@ function renderFirebaseCharacterSelect() {
     charDiv.appendChild(btn);
   });
   document.getElementById('backBtn').onclick = () => window.startFirebaseMultiplayer();
+  // Show waiting message if already picked
+  if (alreadyPicked) {
+    document.getElementById('fbStatus').innerText = 'Waiting for other player to pick...';
+  }
 }
 
 function renderFirebaseImageSelect(charIdx) {
@@ -287,17 +294,26 @@ function renderFirebaseImageSelect(charIdx) {
     <button id="backBtn">Back</button>
   `;
   const imgDiv = document.getElementById('fbImgSelect');
+  let alreadyPicked = fbPlayers[fbPlayerNum] && fbPlayers[fbPlayerNum].image;
   char.images.forEach((img, i) => {
     const btn = document.createElement('button');
     btn.innerHTML = `<img src="assets/${char.folder}/${img}" alt="${char.name}" width="80">`;
+    btn.disabled = alreadyPicked;
     btn.onclick = () => {
-      // Only update this player's slot
+      if (alreadyPicked) return;
       fbPlayers[fbPlayerNum].image = `assets/${char.folder}/${img}`;
       set(fbRoomRef, { players: fbPlayers, board: fbBoard, currentPlayer: 0, gameActive: false });
     };
     imgDiv.appendChild(btn);
   });
   document.getElementById('backBtn').onclick = () => renderFirebaseCharacterSelect();
+  // Show waiting message if already picked
+  if (alreadyPicked) {
+    let status = document.createElement('div');
+    status.style = 'margin:12px 0; color:#333; font-weight:bold;';
+    status.innerText = 'Waiting for other player to pick...';
+    imgDiv.parentNode.insertBefore(status, imgDiv.nextSibling);
+  }
 }
 
 function renderFirebaseBoard() {
@@ -312,6 +328,8 @@ function renderFirebaseBoard() {
   }
   html += '</div>';
   html += `<h3 id="turnInfo">${fbPlayers[fbCurrentPlayer]?.character || ''}'s turn</h3>`;
+  // Show clear status for whose turn it is
+  html += `<div id="fbStatus" style="margin:12px 0; color:#333; font-weight:bold;">${fbCurrentPlayer === fbPlayerNum ? 'Your turn!' : 'Waiting for opponent...'}</div>`;
   html += `<button id="restartBtn">Restart</button>`;
   html += `<button id="leaveBtn">Leave Room</button>`;
   document.getElementById('app').innerHTML = html;
@@ -345,6 +363,8 @@ function onFirebaseCellClick(e) {
   const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
   if (fbBoard[idx] !== null) return;
   if (fbCurrentPlayer !== fbPlayerNum) return;
+  // Prevent multiple moves until state updates
+  document.querySelectorAll('.cell').forEach(cell => cell.onclick = null);
   // Make move
   const newBoard = fbBoard.slice();
   newBoard[idx] = fbPlayerNum;
