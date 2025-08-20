@@ -1,4 +1,6 @@
 // --- Private Multiplayer (Socket.IO over ngrok) ---
+// make it callable from multiplayer.js
+window.renderStartScreen = renderStartScreen;
 
 // Read server/room from URL so you don't redeploy when ngrok URL changes
 const _params = new URLSearchParams(location.search);
