@@ -4,7 +4,7 @@ window.renderStartScreen = renderStartScreen;
 
 // Read server/room from URL so you don't redeploy when ngrok URL changes
 const _params = new URLSearchParams(location.search);
-const SERVER_URL = _params.get('server') || 'https://8e8fa62100f5.ngrok-free.app';
+const SERVER_URL = _params.get('server') || 'https://6cbfe665b773.ngrok-free.app';
 const DEFAULT_ROOM = _params.get('room') || 'public';
 
 let socket = null;
@@ -86,3 +86,4 @@ function renderBoardMP(roomId) {
     if (window.renderStartScreen) window.renderStartScreen();
   };
 }
+
