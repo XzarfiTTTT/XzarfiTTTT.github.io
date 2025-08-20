@@ -34,7 +34,6 @@ const characters = [
   { name: 'Tracker', folder: 'tracker', images: [ 'tracker.jpg','tracker2.jpg' ] }
 ];
 
-
 function renderStartScreen() {
   document.getElementById('app').innerHTML = `
     <h1>Paw Patrol Tic-Tac-Toe</h1>
@@ -46,10 +45,8 @@ function renderStartScreen() {
     renderCharacterSelect1P();
   };
   document.getElementById('twoPlayerBtn').onclick = renderCharacterSelect;
-  document.getElementById('multiPlayerBtn').onclick = startMultiplayerQueue;
+  document.getElementById('multiPlayerBtn').onclick = startMultiplayerSocketIO;
 }
-
-
 
 // --- 1 Player Mode ---
 function renderCharacterSelect1P() {
