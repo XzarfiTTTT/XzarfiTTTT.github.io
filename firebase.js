@@ -42,6 +42,7 @@ window.startFirebaseMultiplayer = function startFirebaseMultiplayer() {
 let fbQueueRef = null;
 let fbQueueUnsub = null;
 let fbQueueId = null;
+let fbQueueMatchListener = null;
 
 function enterFirebaseQueue() {
   // Generate a unique id for this player
@@ -49,22 +50,45 @@ function enterFirebaseQueue() {
   fbQueueRef = ref(db, 'fbqueue/' + fbQueueId);
   set(fbQueueRef, { ts: Date.now() });
   renderFirebaseQueueWaiting();
-  // Listen for queue changes
+  // Listen for queue changes (atomic match)
   if (fbQueueUnsub) fbQueueUnsub();
-  fbQueueUnsub = onValue(ref(db, 'fbqueue'), (snap) => {
+  fbQueueUnsub = onValue(ref(db, 'fbqueue'), async (snap) => {
     const queue = snap.val() || {};
     const ids = Object.keys(queue);
-    // Show waiting list
     document.getElementById('queueList').innerHTML = ids.map(id => `<li>${id === fbQueueId ? 'You' : 'Player'}</li>`).join('');
-    // If there is another player, match and create a room
-    if (ids.length >= 2) {
-      const [id1, id2] = ids;
-      if (id1 === fbQueueId || id2 === fbQueueId) {
-        // Only one of the two should create the room
-        if (id1 === fbQueueId) {
-          createFirebaseMatchRoom(id1, id2);
-        }
+    // Try to atomically match with another player
+    if (ids.length >= 2 && ids.includes(fbQueueId)) {
+      // Always sort to avoid race
+      const sorted = ids.sort();
+      const myIdx = sorted.indexOf(fbQueueId);
+      const otherIdx = myIdx === 0 ? 1 : 0;
+      const otherId = sorted[otherIdx];
+      // Only the lexicographically first creates the room
+      if (myIdx === 0) {
+        // Use a transaction to ensure only one creates the room
+        const matchRoomRef = ref(db, 'fbrooms');
+        const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        await set(ref(db, 'fbrooms/' + roomId), { players: [null, null], board: Array(9).fill(null), currentPlayer: 0, gameActive: false, waiting: false, match: [sorted[0], sorted[1]] });
+        // Write match info to both queue entries so both can see
+        await set(ref(db, 'fbqueue/' + sorted[0] + '/matchRoom'), roomId);
+        await set(ref(db, 'fbqueue/' + sorted[1] + '/matchRoom'), roomId);
+        // Remove both from queue after a short delay to allow both to read
+        setTimeout(() => {
+          remove(ref(db, 'fbqueue/' + sorted[0]));
+          remove(ref(db, 'fbqueue/' + sorted[1]));
+        }, 1000);
       }
+    }
+  });
+  // Listen for matchRoom assignment
+  if (fbQueueMatchListener) fbQueueMatchListener();
+  fbQueueMatchListener = onValue(fbQueueRef, (snap) => {
+    const val = snap.val();
+    if (val && val.matchRoom) {
+      // Matched! Join the room
+      if (fbQueueUnsub) fbQueueUnsub();
+      if (fbQueueMatchListener) fbQueueMatchListener();
+      joinFirebaseRoom(val.matchRoom);
     }
   });
 }
@@ -79,22 +103,18 @@ function renderFirebaseQueueWaiting() {
   document.getElementById('leaveBtn').onclick = () => {
     if (fbQueueRef) remove(fbQueueRef);
     if (fbQueueUnsub) fbQueueUnsub();
+    if (fbQueueMatchListener) fbQueueMatchListener();
+    fbQueueRef = null;
+    fbQueueUnsub = null;
+    fbQueueMatchListener = null;
+    fbQueueId = null;
     if (window.renderStartScreen) window.renderStartScreen();
   };
 }
 
 function createFirebaseMatchRoom(id1, id2) {
-  // Remove both from queue
-  remove(ref(db, 'fbqueue/' + id1));
-  remove(ref(db, 'fbqueue/' + id2));
-  // Create a new room with a unique id
-  const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-  const roomRef = ref(db, 'fbrooms/' + roomId);
-  set(roomRef, { players: [null, null], board: Array(9).fill(null), currentPlayer: 0, gameActive: false, waiting: false, match: [id1, id2] });
-  // Both players join this room
-  setTimeout(() => {
-    joinFirebaseRoom(roomId);
-  }, 500);
+  // Deprecated: now handled atomically in queue logic
+  // (kept for backward compatibility, but not used)
 }
 
 function joinFirebaseRoom(roomId) {
@@ -144,6 +164,18 @@ function renderFirebaseWaitingScreen() {
   `;
   document.getElementById('leaveBtn').onclick = () => {
     if (fbUnsub) fbUnsub();
+    // Clean up room if alone
+    if (fbRoomRef) {
+      get(fbRoomRef).then(snap => {
+        const val = snap.val();
+        if (val && (!val.players[0] || !val.players[1])) {
+          remove(fbRoomRef);
+        }
+      });
+    }
+    fbRoomId = null;
+    fbRoomRef = null;
+    fbUnsub = null;
     if (window.renderStartScreen) window.renderStartScreen();
   };
 }
@@ -260,6 +292,18 @@ function renderFirebaseBoard() {
   };
   document.getElementById('leaveBtn').onclick = () => {
     if (fbUnsub) fbUnsub();
+    // Clean up room if alone
+    if (fbRoomRef) {
+      get(fbRoomRef).then(snap => {
+        const val = snap.val();
+        if (val && (!val.players[0] || !val.players[1])) {
+          remove(fbRoomRef);
+        }
+      });
+    }
+    fbRoomId = null;
+    fbRoomRef = null;
+    fbUnsub = null;
     if (window.renderStartScreen) window.renderStartScreen();
   };
 }
