@@ -48,34 +48,32 @@ function enterFirebaseQueue() {
   // Generate a unique id for this player
   fbQueueId = 'q_' + Math.random().toString(36).substr(2, 9);
   fbQueueRef = ref(db, 'fbqueue/' + fbQueueId);
-  set(fbQueueRef, { ts: Date.now() });
+  // Use serverTimestamp for reliable ordering
+  set(fbQueueRef, { ts: { ".sv": "timestamp" } });
+  // Clean up if user disconnects
+  onDisconnect(fbQueueRef).remove();
   renderFirebaseQueueWaiting();
   // Listen for queue changes (atomic match)
   if (fbQueueUnsub) fbQueueUnsub();
   fbQueueUnsub = onValue(ref(db, 'fbqueue'), async (snap) => {
     const queue = snap.val() || {};
-    const ids = Object.keys(queue);
+    // Sort by server timestamp (oldest first)
+    const ids = Object.keys(queue).filter(id => queue[id] && queue[id].ts).sort((a, b) => queue[a].ts - queue[b].ts);
     document.getElementById('queueList').innerHTML = ids.map(id => `<li>${id === fbQueueId ? 'You' : 'Player'}</li>`).join('');
-    // Try to atomically match with another player
+    // If at least 2 in queue, match the two oldest
     if (ids.length >= 2 && ids.includes(fbQueueId)) {
-      // Always sort to avoid race
-      const sorted = ids.sort();
-      const myIdx = sorted.indexOf(fbQueueId);
-      const otherIdx = myIdx === 0 ? 1 : 0;
-      const otherId = sorted[otherIdx];
-      // Only the lexicographically first creates the room
-      if (myIdx === 0) {
-        // Use a transaction to ensure only one creates the room
-        const matchRoomRef = ref(db, 'fbrooms');
+      const [id1, id2] = ids;
+      // Only the oldest creates the room
+      if (fbQueueId === id1) {
         const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-        await set(ref(db, 'fbrooms/' + roomId), { players: [null, null], board: Array(9).fill(null), currentPlayer: 0, gameActive: false, waiting: false, match: [sorted[0], sorted[1]] });
+        await set(ref(db, 'fbrooms/' + roomId), { players: [null, null], board: Array(9).fill(null), currentPlayer: 0, gameActive: false, waiting: false, match: [id1, id2] });
         // Write match info to both queue entries so both can see
-        await set(ref(db, 'fbqueue/' + sorted[0] + '/matchRoom'), roomId);
-        await set(ref(db, 'fbqueue/' + sorted[1] + '/matchRoom'), roomId);
+        await set(ref(db, 'fbqueue/' + id1 + '/matchRoom'), roomId);
+        await set(ref(db, 'fbqueue/' + id2 + '/matchRoom'), roomId);
         // Remove both from queue after a short delay to allow both to read
         setTimeout(() => {
-          remove(ref(db, 'fbqueue/' + sorted[0]));
-          remove(ref(db, 'fbqueue/' + sorted[1]));
+          remove(ref(db, 'fbqueue/' + id1));
+          remove(ref(db, 'fbqueue/' + id2));
         }, 1000);
       }
     }
