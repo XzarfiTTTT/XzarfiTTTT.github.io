@@ -192,7 +192,16 @@ function joinFirebaseRoom(roomId) {
       fbGameActive = state.gameActive ?? false;
       
       // Store winner info globally so render function can access it
+      // Play win/draw sound if winner just appeared
+      const prevWinner = window.fbGameWinner;
       window.fbGameWinner = state.winner;
+      if (state.winner !== undefined && state.winner !== prevWinner) {
+        if (state.winner === 'draw') {
+          if (typeof playDrawSound === 'function') playDrawSound();
+        } else {
+          if (typeof playWinSound === 'function') playWinSound();
+        }
+      }
       
       console.log('Firebase state update:', {
         myPlayerNum: fbPlayerNum,
@@ -224,10 +233,12 @@ function joinFirebaseRoom(roomId) {
         return;
       }
       // If both players have picked character and image, but game not started, start it
+      // Only start game if board is empty and no winner
+      const boardIsEmpty = Array.isArray(fbBoard) && fbBoard.every(cell => cell === null);
       if (
         fbPlayers[0]?.character && fbPlayers[1]?.character &&
         fbPlayers[0]?.image && fbPlayers[1]?.image &&
-        !fbGameActive && !state.winner
+        !fbGameActive && !state.winner && boardIsEmpty
       ) {
         console.log('Both players ready, starting game!');
         set(fbRoomRef, { ...state, gameActive: true });
@@ -559,35 +570,28 @@ function onFirebaseCellClick(e) {
   const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
   
   // Ensure we have a proper 9-element board before checking the cell
-  const currentBoard = Array(9).fill(null);
+  let currentBoard = Array.isArray(fbBoard) ? fbBoard.slice(0, 9) : Array(9).fill(null);
   for (let i = 0; i < 9; i++) {
-    currentBoard[i] = fbBoard[i] !== undefined ? fbBoard[i] : null;
+    if (currentBoard[i] === undefined) currentBoard[i] = null;
   }
-  
-  console.log(`Checking cell ${idx}: board[${idx}] = ${currentBoard[idx]}, full board:`, currentBoard);
-  
+  console.log(`[DEBUG] Checking cell ${idx}: board[${idx}] = ${currentBoard[idx]}, full board:`, currentBoard);
   if (currentBoard[idx] !== null && currentBoard[idx] !== undefined) {
-    console.log(`Cell ${idx} already taken by player ${currentBoard[idx]}`);
+    console.log(`[DEBUG] Cell ${idx} already taken by player ${currentBoard[idx]}`);
     return; // Cell already taken
   }
-  
-  console.log(`Player ${fbPlayerNum} making move at position ${idx}`);
-  
+  console.log(`[DEBUG] Player ${fbPlayerNum} making move at position ${idx}`);
   // Make the move locally first - ensure we have a proper 9-element array
-  const newBoard = Array(9).fill(null);
-  for (let i = 0; i < 9; i++) {
-    newBoard[i] = currentBoard[i] !== undefined ? currentBoard[i] : null;
-  }
+  let newBoard = currentBoard.slice();
   newBoard[idx] = fbPlayerNum;
-  
-  console.log('New board after move:', newBoard);
-  
+  for (let i = 0; i < 9; i++) {
+    if (newBoard[i] === undefined) newBoard[i] = null;
+  }
+  console.log('[DEBUG] New board after move:', newBoard);
   // Check for winner
   const winner = checkFirebaseWin(newBoard);
   const isDraw = winner === 'draw';
   const gameEnded = winner !== null;
-  
-  console.log('Win check result:', { winner, isDraw, gameEnded, boardState: newBoard });
+  console.log('[DEBUG] Win check result:', { winner, isDraw, gameEnded, boardState: newBoard });
   
   // Play sounds for game ending
   if (gameEnded) {
@@ -605,27 +609,23 @@ function onFirebaseCellClick(e) {
   
   // Calculate next player (if game continues)
   const nextPlayer = gameEnded ? fbCurrentPlayer : (1 - fbCurrentPlayer);
-  
-  console.log(`Move calculation: currentPlayer was ${fbCurrentPlayer}, nextPlayer will be ${nextPlayer}, gameEnded: ${gameEnded}`);
-  
+  console.log(`[DEBUG] Move calculation: currentPlayer was ${fbCurrentPlayer}, nextPlayer will be ${nextPlayer}, gameEnded: ${gameEnded}`);
   // Update Firebase with the new state - ensure board is always a complete array
-  const completeBoard = Array(9).fill(null);
+  let completeBoard = Array.isArray(newBoard) ? newBoard.slice(0, 9) : Array(9).fill(null);
   for (let i = 0; i < 9; i++) {
-    completeBoard[i] = newBoard[i] !== undefined ? newBoard[i] : null;
+    if (completeBoard[i] === undefined) completeBoard[i] = null;
   }
-  
   const updates = {
     players: fbPlayers,
     board: completeBoard,
     currentPlayer: nextPlayer,
     gameActive: !gameEnded
   };
-  
-  if (gameEnded && winner !== null && winner !== 'draw') {
+  // Always set winner if game ended (including draw)
+  if (gameEnded && winner !== null) {
     updates.winner = winner;
   }
-  
-  console.log('Updating Firebase with complete board:', completeBoard, 'Updates:', updates);
+  console.log('[DEBUG] Updating Firebase with complete board:', completeBoard, 'Updates:', updates);
   set(fbRoomRef, updates);
 }
 
