@@ -19,8 +19,7 @@ if (!window.characters) {
 
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, push, set, onValue, remove, get, child, onDisconnect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { initChat, destroyChat } from "./chat.js";
+import { getDatabase, ref, push, set, onValue, remove, get, child, onDisconnect, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyC6GoSYb_wCSlGxvw48ETD6cJnvBJISNLA",
@@ -139,14 +138,19 @@ function joinFirebaseRoom(roomId) {
   get(fbRoomRef).then(snap => {
     let val = snap.val();
     let players = (val && val.players) ? val.players.slice() : [null, null];
+    console.log('Joining room, current players:', players);
+    
     // Claim a slot if not already claimed
     if (!players[0]) {
       fbPlayerNum = 0;
       players[0] = { name: `Player 1`, character: null, image: null, charIdx: null };
+      console.log('Assigned as Player 1 (index 0)');
     } else if (!players[1]) {
       fbPlayerNum = 1;
       players[1] = { name: `Player 2`, character: null, image: null, charIdx: null };
+      console.log('Assigned as Player 2 (index 1)');
     } else {
+      console.log('Room is full!');
       document.getElementById('fbStatus').innerText = 'Room full!';
       return;
     }
@@ -156,27 +160,66 @@ function joinFirebaseRoom(roomId) {
       const state = snap.val();
       if (!state) {
         // Room deleted (opponent left)
-        destroyChat();
         document.getElementById('app').innerHTML = '<h2>Opponent left the game.</h2><button id="backBtn">Back to Menu</button>';
         document.getElementById('backBtn').onclick = () => window.startFirebaseMultiplayer();
         return;
       }
       fbPlayers = state.players || fbPlayers;
-      fbBoard = state.board || fbBoard;
+      
+      // Ensure board is always a proper array, not a sparse object
+      // Robust board reconstruction from Firebase
+      fbBoard = Array(9).fill(null);
+      if (state.board) {
+        if (Array.isArray(state.board)) {
+          // Copy array elements, ensuring we have exactly 9 elements
+          for (let i = 0; i < 9; i++) {
+            fbBoard[i] = state.board[i] !== undefined ? state.board[i] : null;
+          }
+        } else {
+          // Convert Firebase object back to array, ensuring all indices exist
+          Object.keys(state.board).forEach(key => {
+            const index = parseInt(key);
+            if (index >= 0 && index < 9) {
+              fbBoard[index] = state.board[key];
+            }
+          });
+        }
+      }
+      
+      console.log('Board reconstruction complete:', fbBoard, 'Length:', fbBoard.length);
+      
       fbCurrentPlayer = state.currentPlayer ?? 0;
       fbGameActive = state.gameActive ?? false;
+      
+      // Store winner info globally so render function can access it
+      window.fbGameWinner = state.winner;
+      
+      console.log('Firebase state update:', {
+        myPlayerNum: fbPlayerNum,
+        players: fbPlayers.length,
+        player0: fbPlayers[0] ? {char: fbPlayers[0].character, image: !!fbPlayers[0].image} : 'null',
+        player1: fbPlayers[1] ? {char: fbPlayers[1].character, image: !!fbPlayers[1].image} : 'null',
+        board: fbBoard,
+        currentPlayer: fbCurrentPlayer,
+        gameActive: fbGameActive,
+        winner: state.winner
+      });
+      
       // Robust state-driven UI flow:
       if (!state.players || state.players.length < 2) {
+        console.log('Not enough players, showing waiting screen');
         renderFirebaseWaitingScreen();
         return;
       }
       // If this player hasn't picked character, show character select
       if (!fbPlayers[fbPlayerNum]?.character) {
+        console.log(`Player ${fbPlayerNum} needs to pick character`);
         renderFirebaseCharacterSelect();
         return;
       }
       // If this player hasn't picked image, show image select
       if (!fbPlayers[fbPlayerNum]?.image) {
+        console.log(`Player ${fbPlayerNum} needs to pick image`);
         renderFirebaseImageSelect(fbPlayers[fbPlayerNum].charIdx);
         return;
       }
@@ -184,36 +227,33 @@ function joinFirebaseRoom(roomId) {
       if (
         fbPlayers[0]?.character && fbPlayers[1]?.character &&
         fbPlayers[0]?.image && fbPlayers[1]?.image &&
-        !fbGameActive
+        !fbGameActive && !state.winner
       ) {
+        console.log('Both players ready, starting game!');
         set(fbRoomRef, { ...state, gameActive: true });
         return;
       }
-      // If game is active, show board
+      // If both players have characters and images, show the game board (active or finished)
       if (
-        fbGameActive &&
         fbPlayers[0]?.character && fbPlayers[1]?.character &&
         fbPlayers[0]?.image && fbPlayers[1]?.image
       ) {
+        console.log('Both players have selections, showing game board');
         renderFirebaseBoard();
         return;
       }
       // Fallback: waiting screen
+      console.log('Fallback: showing waiting screen');
       renderFirebaseWaitingScreen();
       // Show player left message if opponent leaves
       if (state.players && state.players.length === 2) {
         const other = 1 - fbPlayerNum;
         if (!state.players[other]) {
-          destroyChat();
           document.getElementById('app').innerHTML = '<h2>Opponent left the game.</h2><button id="backBtn">Back to Menu</button>';
           document.getElementById('backBtn').onclick = () => window.startFirebaseMultiplayer();
         }
       }
     });
-    // Start chat after joining room
-    setTimeout(() => {
-      initChat(roomId, `Player ${fbPlayerNum + 1}`);
-    }, 200);
   });
 }
 
@@ -221,13 +261,10 @@ function renderFirebaseWaitingScreen() {
   let html = '';
   if (window.fbRoomId) html += `<div id="roomNameDisplay" style="font-size:13px; color:#555; margin-bottom:4px;">Room: ${window.fbRoomId}</div>`;
   html += `<h2>Waiting for opponent to join...</h2>`;
-  html += `<div id="chatContainer"></div>`;
   html += `<button id="leaveBtn">Leave Room</button>`;
   document.getElementById('app').innerHTML = html;
-  setTimeout(() => { if (window.initChat) window.initChat(fbRoomId, `Player ${fbPlayerNum + 1}`); }, 100);
   document.getElementById('leaveBtn').onclick = () => {
     if (fbUnsub) fbUnsub();
-    if (window.destroyChat) window.destroyChat();
     // Clean up room if alone
     if (fbRoomRef) {
       get(fbRoomRef).then(snap => {
@@ -300,13 +337,8 @@ function renderFirebaseCharacterSelect() {
     <div id="fbCharSelect" class="char-select"></div>
     <div id="fbStatus" style="margin:12px 0; color:#333; font-weight:bold;"></div>
     <div id="fbTimer" style="margin:8px 0; color:#555;"></div>
-    <div id="chatContainer"></div>
     <button id="backBtn">Back</button>
   `;
-  // Only initialize chat if not present
-  setTimeout(() => {
-    if (!document.getElementById('chatBox') && window.initChat) window.initChat(fbRoomId, `Player ${fbPlayerNum + 1}`);
-  }, 100);
   // Always clear previous timer
   if (fbCharSelectTimeout) clearInterval(fbCharSelectTimeout);
   const charDiv = document.getElementById('fbCharSelect');
@@ -319,7 +351,14 @@ function renderFirebaseCharacterSelect() {
     btn.onclick = () => {
       if (alreadyPicked) return;
       clearInterval(fbCharSelectTimeout);
-      fbPlayers[fbPlayerNum] = { ...fbPlayers[fbPlayerNum], character: char.name, image: `assets/${char.folder}/${mainImg}`, charIdx: idx };
+      // Only set character and charIdx, NOT the image yet - that comes in image selection
+      fbPlayers[fbPlayerNum] = { 
+        ...fbPlayers[fbPlayerNum], 
+        character: char.name, 
+        charIdx: idx,
+        image: null // Clear any previous image
+      };
+      console.log(`Player ${fbPlayerNum} picked character: ${char.name}`);
       set(fbRoomRef, { players: fbPlayers, board: fbBoard, currentPlayer: 0, gameActive: false });
     };
     charDiv.appendChild(btn);
@@ -342,9 +381,15 @@ function renderFirebaseCharacterSelect() {
         document.getElementById('fbTimer').innerText = `Auto-pick in ${timer} seconds...`;
       } else {
         clearInterval(fbCharSelectTimeout);
-        // Auto-pick first available character
+        // Auto-pick first available character (but not image yet)
         let idx = 0;
-        fbPlayers[fbPlayerNum] = { ...fbPlayers[fbPlayerNum], character: window.characters[idx].name, image: `assets/${window.characters[idx].folder}/${window.characters[idx].images[0]}`, charIdx: idx };
+        fbPlayers[fbPlayerNum] = { 
+          ...fbPlayers[fbPlayerNum], 
+          character: window.characters[idx].name, 
+          charIdx: idx,
+          image: null 
+        };
+        console.log(`Auto-picked character for Player ${fbPlayerNum}: ${window.characters[idx].name}`);
         set(fbRoomRef, { players: fbPlayers, board: fbBoard, currentPlayer: 0, gameActive: false });
       }
     }, 1000);
@@ -360,13 +405,8 @@ function renderFirebaseImageSelect(charIdx) {
   html += `<div id="fbImgSelect" class="char-select"></div>`;
   html += `<div id="fbStatus" style="margin:12px 0; color:#333; font-weight:bold;"></div>`;
   html += `<div id="fbTimer" style="margin:8px 0; color:#555;"></div>`;
-  html += `<div id="chatContainer"></div>`;
   html += `<button id="backBtn">Back</button>`;
   document.getElementById('app').innerHTML = html;
-  // Only initialize chat if not present
-  setTimeout(() => {
-    if (!document.getElementById('chatBox') && window.initChat) window.initChat(fbRoomId, `Player ${fbPlayerNum + 1}`);
-  }, 100);
   // Always clear previous timer
   if (fbImgSelectTimeout) clearInterval(fbImgSelectTimeout);
   const imgDiv = document.getElementById('fbImgSelect');
@@ -424,23 +464,65 @@ function renderFirebaseBoard() {
   html += '</div>';
   html += `<h3 id="turnInfo">${fbPlayers[fbCurrentPlayer]?.character || ''}'s turn</h3>`;
   // Show clear status for whose turn it is
-  html += `<div id="fbStatus" style="margin:12px 0; color:#333; font-weight:bold;">${fbCurrentPlayer === fbPlayerNum ? 'Your turn!' : 'Waiting for opponent...'}</div>`;
+  if (fbGameActive) {
+    if (fbCurrentPlayer === fbPlayerNum) {
+      html += `<div id="fbStatus" style="margin:12px 0; color:#2E7D32; font-weight:bold; font-size:16px;">🎮 Your turn! Choose a cell</div>`;
+    } else {
+      html += `<div id="fbStatus" style="margin:12px 0; color:#FF6B35; font-weight:bold; font-size:16px;">⏳ Waiting for ${fbPlayers[fbCurrentPlayer]?.character || 'opponent'}...</div>`;
+    }
+  } else {
+    // Game ended - show winner announcement
+    const winner = window.fbGameWinner;
+    if (winner === 'draw') {
+      html += `<div id="fbStatus" style="margin:12px 0; color:#FFA500; font-weight:bold; font-size:18px;">🤝 It's a Draw!</div>`;
+    } else if (winner !== undefined) {
+      const winnerPlayer = fbPlayers[winner];
+      const winnerName = winnerPlayer?.character || `Player ${winner}`;
+      html += `<div id="fbStatus" style="margin:12px 0; color:#4CAF50; font-weight:bold; font-size:18px;">🎉 ${winnerName} Wins! 🎉</div>`;
+    } else {
+      html += `<div id="fbStatus" style="margin:12px 0; color:#666; font-weight:bold;">Game ended</div>`;
+    }
+  }
   html += `<button id="restartBtn">Restart</button>`;
   html += `<button id="leaveBtn">Leave Room</button>`;
-  html += `<div id="chatContainer"></div>`;
   document.getElementById('app').innerHTML = html;
-  setTimeout(() => { if (window.initChat) window.initChat(fbRoomId, `Player ${fbPlayerNum + 1}`); }, 100);
 
+  console.log(`Attaching click handlers - current player: ${fbCurrentPlayer}, my player: ${fbPlayerNum}, game active: ${fbGameActive}`);
   document.querySelectorAll('.cell').forEach(cell => {
     cell.onclick = (e) => onFirebaseCellClick(e);
+    
+    // Add visual feedback for clickable cells
+    const idx = parseInt(cell.getAttribute('data-idx'));
+    if (fbBoard[idx] === null && fbCurrentPlayer === fbPlayerNum && fbGameActive) {
+      cell.style.cursor = 'pointer';
+      cell.style.border = '2px solid #4CAF50';
+      cell.title = 'Click to make your move!';
+      console.log(`Cell ${idx} is clickable for player ${fbPlayerNum}`);
+    } else {
+      cell.style.cursor = 'default';
+      cell.style.border = '1px solid #ddd';
+      if (fbBoard[idx] !== null) {
+        cell.title = 'Cell already taken';
+      } else if (fbCurrentPlayer !== fbPlayerNum) {
+        cell.title = 'Wait for your turn';
+      }
+    }
   });
+  
   document.getElementById('restartBtn').onclick = () => {
-    // Reset board, currentPlayer, and gameActive for both players
-    set(fbRoomRef, { ...fbPlayers && { players: fbPlayers }, board: Array(9).fill(null), currentPlayer: 0, gameActive: true });
+    console.log('Restarting game...');
+    // Reset the game state
+    const resetState = {
+      players: fbPlayers,
+      board: Array(9).fill(null),
+      currentPlayer: 0,
+      gameActive: true
+    };
+    delete resetState.winner;
+    set(fbRoomRef, resetState);
   };
   document.getElementById('leaveBtn').onclick = () => {
     if (fbUnsub) fbUnsub();
-    if (window.destroyChat) window.destroyChat();
     // Remove player from room
     get(fbRoomRef).then(snap => {
       const val = snap.val();
@@ -462,37 +544,126 @@ function renderFirebaseBoard() {
 }
 
 function onFirebaseCellClick(e) {
-  if (!fbGameActive) return;
-  const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
-  if (fbBoard[idx] !== null) return;
-  if (fbCurrentPlayer !== fbPlayerNum) return;
-  // Prevent multiple moves until state updates
-  document.querySelectorAll('.cell').forEach(cell => cell.onclick = null);
-  // Make move
-  const newBoard = fbBoard.slice();
-  newBoard[idx] = fbPlayerNum;
-  const winner = checkFirebaseWin(newBoard);
-  let nextPlayer = 1 - fbCurrentPlayer;
-  let gameActive = winner === null;
-  set(fbRoomRef, { players: fbPlayers, board: newBoard, currentPlayer: nextPlayer, gameActive });
-  if (winner !== null) {
-    setTimeout(() => {
-      document.getElementById('turnInfo').innerText = winner === 'draw' ? "It's a draw!" : `${fbPlayers[winner].character} wins!`;
-    }, 50);
+  console.log(`Click attempt - Player: ${fbPlayerNum}, Current turn: ${fbCurrentPlayer}, Game active: ${fbGameActive}`);
+  
+  // Only allow moves if it's this player's turn and game is active
+  if (!fbGameActive) {
+    console.log('Game not active, click ignored');
+    return;
   }
+  if (fbCurrentPlayer !== fbPlayerNum) {
+    console.log(`Not your turn - current: ${fbCurrentPlayer}, you: ${fbPlayerNum}`);
+    return;
+  }
+  
+  const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
+  
+  // Ensure we have a proper 9-element board before checking the cell
+  const currentBoard = Array(9).fill(null);
+  for (let i = 0; i < 9; i++) {
+    currentBoard[i] = fbBoard[i] !== undefined ? fbBoard[i] : null;
+  }
+  
+  console.log(`Checking cell ${idx}: board[${idx}] = ${currentBoard[idx]}, full board:`, currentBoard);
+  
+  if (currentBoard[idx] !== null && currentBoard[idx] !== undefined) {
+    console.log(`Cell ${idx} already taken by player ${currentBoard[idx]}`);
+    return; // Cell already taken
+  }
+  
+  console.log(`Player ${fbPlayerNum} making move at position ${idx}`);
+  
+  // Make the move locally first - ensure we have a proper 9-element array
+  const newBoard = Array(9).fill(null);
+  for (let i = 0; i < 9; i++) {
+    newBoard[i] = currentBoard[i] !== undefined ? currentBoard[i] : null;
+  }
+  newBoard[idx] = fbPlayerNum;
+  
+  console.log('New board after move:', newBoard);
+  
+  // Check for winner
+  const winner = checkFirebaseWin(newBoard);
+  const isDraw = winner === 'draw';
+  const gameEnded = winner !== null;
+  
+  console.log('Win check result:', { winner, isDraw, gameEnded, boardState: newBoard });
+  
+  // Play sounds for game ending
+  if (gameEnded) {
+    if (isDraw) {
+      // Play draw sound if available
+      if (typeof playDrawSound === 'function') playDrawSound();
+    } else {
+      // Play win sound if available  
+      if (typeof playWinSound === 'function') playWinSound();
+    }
+  } else {
+    // Play turn sound for regular moves
+    if (typeof playTurnSound === 'function') playTurnSound();
+  }
+  
+  // Calculate next player (if game continues)
+  const nextPlayer = gameEnded ? fbCurrentPlayer : (1 - fbCurrentPlayer);
+  
+  console.log(`Move calculation: currentPlayer was ${fbCurrentPlayer}, nextPlayer will be ${nextPlayer}, gameEnded: ${gameEnded}`);
+  
+  // Update Firebase with the new state - ensure board is always a complete array
+  const completeBoard = Array(9).fill(null);
+  for (let i = 0; i < 9; i++) {
+    completeBoard[i] = newBoard[i] !== undefined ? newBoard[i] : null;
+  }
+  
+  const updates = {
+    players: fbPlayers,
+    board: completeBoard,
+    currentPlayer: nextPlayer,
+    gameActive: !gameEnded
+  };
+  
+  if (gameEnded && winner !== null && winner !== 'draw') {
+    updates.winner = winner;
+  }
+  
+  console.log('Updating Firebase with complete board:', completeBoard, 'Updates:', updates);
+  set(fbRoomRef, updates);
 }
 
 function checkFirebaseWin(board) {
-  const wins = [
-    [0,1,2],[3,4,5],[6,7,8],
-    [0,3,6],[1,4,7],[2,5,8],
-    [0,4,8],[2,4,6]
-  ];
-  for (const line of wins) {
-    const [a,b,c] = line;
-    if (board[a] !== null && board[a] === board[b] && board[a] === board[c]) return board[a];
+  // Ensure we have a proper 9-element array
+  const normalizedBoard = Array(9).fill(null);
+  for (let i = 0; i < 9; i++) {
+    normalizedBoard[i] = board[i] !== undefined ? board[i] : null;
   }
-  if (board.every(cell => cell !== null)) return 'draw';
+  
+  console.log('WIN CHECK: Analyzing board:', normalizedBoard);
+  
+  const wins = [
+    [0,1,2],[3,4,5],[6,7,8], // rows
+    [0,3,6],[1,4,7],[2,5,8], // cols
+    [0,4,8],[2,4,6] // diags
+  ];
+  
+  // Check for Player 0 win
+  if (wins.some(line => line.every(idx => normalizedBoard[idx] === 0))) {
+    console.log('🎉 WINNER FOUND: Player 0!');
+    return 0;
+  }
+  
+  // Check for Player 1 win  
+  if (wins.some(line => line.every(idx => normalizedBoard[idx] === 1))) {
+    console.log('🎉 WINNER FOUND: Player 1!');
+    return 1;
+  }
+  
+  // Check for draw - all cells filled
+  const filledCells = normalizedBoard.filter(cell => cell !== null).length;
+  if (filledCells === 9) {
+    console.log('🤝 DRAW detected - all 9 cells filled, no winner');
+    return 'draw';
+  }
+  
+  console.log(`➡️ Game continues - ${filledCells}/9 cells filled`);
   return null;
 }
 
